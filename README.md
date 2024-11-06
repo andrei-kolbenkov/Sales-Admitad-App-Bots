@@ -19,7 +19,9 @@
 2. Сайт на Django, содержащий купоны, промокоды, товары, интегрированный в два Telegram-бота, в которые встроены два Telegram Mini-App. 
     - Использование индексов ввиду большого количества строк (более 5млн) в базе данных.
     - Использование сложных запросов Django ORM
-    - Использование полнотекстового поиска по названиям товаров (to_tsvector).
+    - Использование полнотекстового поиска по названиям товаров (to_tsvector)
+    - Собственная реализация пагинации страниц
+    - Использование debug toolbar для отслеживания запросов к базе данных
     - HTML шаблоны + JS, CSS
     - Использование Telegram Mini-App
     - Использование Яндекс Метрики для ведения статистики
@@ -34,7 +36,9 @@ This project consists of the following services:
 2. A Django website containing coupons, promotional codes, products, integrated into two Telegram bots, which have two Telegram Mini-Apps built into them.
     - Using indexes due to the large number of rows (more than 5 million) in the database.
     - Using complex Django ORM queries
-    - Using full-text search by product names (to_tsvector).
+    - Using full-text search by product names (to_tsvector)
+    - Own implementation of page pagination
+    - Using debug toolbar to track database queries
     - HTML templates + JS, CSS
     - Using Telegram Mini-App
     - Using Yandex Metrica to keep statistics
