@@ -18,6 +18,7 @@
 1. Автоматический парсинг купонов, промокодов, товаров более чем 200 магазинов, добавление в базу данных Postgres. Парсинг происходит по API с сайта Admitad с определенным инервалом времени
 2. Сайт на Django, содержащий купоны, промокоды, товары, интегрированный в два Telegram-бота, в которые встроены два Telegram Mini-App. 
     - Использование индексов ввиду большого количества строк (более 5млн) в базе данных.
+    - Использование сложных запросов Django ORM
     - Использование полнотекстового поиска по названиям товаров (to_tsvector).
     - HTML шаблоны + JS, CSS
     - Использование Telegram Mini-App
@@ -32,6 +33,7 @@ This project consists of the following services:
 1. Automatic parsing of coupons, promotional codes, products from more than 200 stores, adding to the Postgres database. Parsing occurs via API from the Admitad website with a certain time interval
 2. A Django website containing coupons, promotional codes, products, integrated into two Telegram bots, which have two Telegram Mini-Apps built into them.
     - Using indexes due to the large number of rows (more than 5 million) in the database.
+    - Using complex Django ORM queries
     - Using full-text search by product names (to_tsvector).
     - HTML templates + JS, CSS
     - Using Telegram Mini-App
