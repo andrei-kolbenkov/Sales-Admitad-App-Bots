@@ -16,7 +16,7 @@ def all(request):
     sort_order = request.GET.get('sort', 'name')
     # Получение текущей страницы из GET-параметра
     page_number = int(request.GET.get('page', 1))
-    limit = 50  # Ограничение на 10 записей
+    limit = 50  # Ограничение на 50 записей
 
     if page_number > 1:
         offset = limit*(page_number-1)
@@ -117,7 +117,6 @@ def all(request):
 def show_shops(request):
     query = request.GET.get('search')
 
-    # Optimize the query using select_related for ForeignKey or OneToOne relationships
     if query:
         shops = Shop.objects.filter(name__icontains=query).only('shop_id', 'category', 'name', 'image').order_by("name").prefetch_related('category')
     else:
@@ -209,7 +208,7 @@ def get_filtered_products(shop, search_query, sort_order, page_number, category1
         filters['category4'] = category4
 
 
-    limit = 50  # Ограничение на 10 записей
+    limit = 50  # Ограничение на 50 записей
 
     if page_number > 1:
         offset = limit * (page_number - 1)
@@ -366,7 +365,7 @@ def redirect_to(request):
     # if yclid:
     #     LinkClick.objects.create(yclid=yclid, clicked_at=timezone.now())
 
-    return redirect(f'https://t.me/coupons186_bot/?start={yclid}')
+    return redirect(f'https://t.me/bot/?start={yclid}')
 
 
 def main(request):
