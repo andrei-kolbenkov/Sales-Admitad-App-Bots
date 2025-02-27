@@ -64,6 +64,38 @@
             border-bottom-right-radius: 10px; /* Закругляем нижний правый угол последней кнопки */
         }
     </style>
+    <script type="text/javascript">
+        // Отправка цели при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            
+            const tg = window.Telegram.WebApp;
+
+            if (!tg.initDataUnsafe || !tg.initDataUnsafe.user) {
+                console.error("Не удалось получить данные Telegram пользователя.");
+                return;
+            }
+        
+            const userId = tg.initDataUnsafe.user.id;
+            const username = tg.initDataUnsafe.user.username || "";
+            
+            const payload = {
+                id: userId,
+                username: username,
+                last_date_prom: new Date().toISOString()
+            };
+        
+            fetch("/api/add_user/", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => console.log("Ответ от сервера:", data))
+            .catch(error => console.error("Ошибка при отправке запроса:", error));
+        });
+    </script>
 </head>
 <div class="tab-container">
         <a href="{% url 'sales_app:shops' %}" class="tab-button {% if request.path == '/promokodi' %}active{% endif %}"><b>Магазины</b></a>
