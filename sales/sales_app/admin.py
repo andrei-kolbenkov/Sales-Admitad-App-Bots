@@ -30,3 +30,8 @@ class CouponAdmin(admin.ModelAdmin):
 @admin.register(CategoryShop)
 class CategoryShopAdmin(admin.ModelAdmin):
     list_display = ['name']
+
+
+@admin.register(UserTG)
+class UserTGAdmin(admin.ModelAdmin):
+    list_display = ['id', 'username', 'last_date_prom', 'last_date_prod']
