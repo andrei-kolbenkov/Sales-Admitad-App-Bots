@@ -65,8 +65,8 @@
     </style>
 </head>
 <div class="tab-container">
-    <a href="{% url 'sales_app:shops_products' %}" class="tab-button {% if request.path == '/shops_products' %}active{% endif %}"><b>Магазины</b></a>
-    <a href="{% url 'sales_app:all' %}" class="tab-button {% if request.path == '/all' %}active{% endif %}"><b>Товары</b></a>
+    <a href="{% url 'sales_app:all' %}" class="tab-button {% if request.path == '/catalog' %}active{% endif %}"><b>Поиск товаров</b></a>
+        <a href="{% url 'sales_app:shops_products' %}" class="tab-button {% if request.path == '/shops_products' %}active{% endif %}"><b>Магазины</b></a>
 </div>
 <form method="GET" action="">
     <div class="input-group mb-3" style="max-width: 600px; margin: 0 auto;">
