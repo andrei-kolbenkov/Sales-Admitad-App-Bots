@@ -1,105 +1,105 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from . models import Shop, Product, Coupon, CategoryShop, LinkClick
+from . models import Shop, Product, Coupon, CategoryShop, UserTG
 from django.contrib.auth.forms import UserCreationForm
 from django.views.generic.edit import CreateView
-from django.db.models import Count, Q, F, ExpressionWrapper, IntegerField, Case, When, Value, BooleanField, Func
+from django.db.models import Count, Q, F, ExpressionWrapper, IntegerField, Case, When, Value, BooleanField
 from django.core.paginator import Paginator
-from django.db.models.functions import Ceil, Length
-from django.db.models.expressions import RawSQL
+from django.db.models.functions import Ceil
 from django.contrib.postgres.search import SearchQuery, SearchVector, SearchRank
 from django.db import connection
+from transliterate import translit
+from itertools import product, chain, permutations
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+from .serializers import UserTGSerializer
+from django.http import JsonResponse
+import logging
 
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
+
+
+def generate_translit_variants(query):
+    """
+    Генерирует список вариантов поискового запроса:
+    - Исходный запрос
+    - Транслитерированный с русского на английский
+    - Транслитерированный с английского на русский
+    """
+    try:
+        # Транслитерация в обе стороны
+        translit_to_eng = translit(query, 'ru', reversed=True)
+        # translit_to_rus = translit(query, 'ru')
+    except Exception:
+        # Если транслитерация не применима
+        translit_to_eng = query
+        # translit_to_rus = query
+
+    # Убираем дубликаты
+    return list(set([query, translit_to_eng]))
 
 
 def all(request):
-    search_query = request.GET.get('search', '').strip()
-    sort_order = request.GET.get('sort', 'name')
+    search_query = request.GET.get('search', '')
+    
+    sort_order = request.GET.get('sort', '')
     # Получение текущей страницы из GET-параметра
     page_number = int(request.GET.get('page', 1))
-    limit = 50  # Ограничение на 50 записей
-
+    if search_query and not sort_order:
+        limit = 1000  # Ограничение на 500 записей
+    else:
+        limit = 50
+    exclude_shop_id=25179
+    
     if page_number > 1:
         offset = limit*(page_number-1)
     else:
         offset = 0
 
-
     if search_query:
-        query = SearchQuery(search_query, config='russian')
+        search_variants = generate_translit_variants(search_query)
+        split_variants = [variant.split() for variant in search_variants]
+        num_words = len(search_query.split())
+        all_words = list(set(chain.from_iterable(split_variants)))
+        unique_combinations = set(
+            tuple(sorted(combo)) for combo in permutations(all_words, num_words)
+        )
+        combinations = [' '.join(combo) for combo in unique_combinations]
 
-        if sort_order == '-sale':
-            vector = SearchVector('name', config='russian')
-            products = Product.objects.filter(search=query).annotate(
-                rank=SearchRank(vector, query),  # Ранг релевантности
-                starts_with=Case(
-                    When(name__istartswith=search_query, then=Value(1)),
-                    default=Value(0),
-                    output_field=IntegerField()
-                )
-            ).filter(rank__gt=0).only(
+        # Формируем условие для фильтрации (по всем вариантам)
+        query_conditions = Q()
+        for variant in combinations:
+            query = SearchQuery(variant, config='russian')
+            query_conditions |= Q(search=query)
+
+
+        # vector = SearchVector('name', config='russian')
+
+        if sort_order:
+            # products = Product.objects.filter(query_conditions).annotate(starts_with=Case(When(name__istartswith=search_query, then=Value(1)), default=Value(0), output_field=IntegerField())).only('name', 'price', 'old_price', 'image', 'sale', 'url', 'shop_id').exclude(shop_id=exclude_shop_id).order_by(sort_order)[offset:offset + limit]
+            products = Product.objects.filter(query_conditions).only(
                 'name', 'price', 'old_price', 'image', 'sale', 'url'
-            ).order_by('-sale', '-starts_with', '-rank')[offset:offset + limit]
-            # products = Product.objects.filter(search=query).only('name', 'price', 'old_price', 'image', 'sale', 'url').order_by('-sale')[offset:offset+limit]
-            # for word in search_query.split(' '):
-            #     # search_pattern = f'%{word}%'
-            #     products += f".filter(name__icontains='{word}')"
-            # products += f".only('name', 'price', 'old_price', 'image', 'sale', 'url').order_by('{sort_order}')[offset:offset+limit]"
-            # products = eval(products)
-        elif sort_order == 'last_update':
-            vector = SearchVector('name', config='russian')
-            # products = Product.objects.select_related('shop').filter(search=query).only('name', 'price', 'old_price', 'image', 'shop_id', 'shop__last_update', 'sale', 'url').order_by('-shop__last_update')[offset:offset+limit]
-            products = Product.objects.select_related('shop').filter(search=query).annotate(
-                rank=SearchRank(vector, query),  # Ранг релевантности
-                starts_with=Case(
-                    When(name__istartswith=search_query, then=Value(1)),
-                    default=Value(0),
-                    output_field=IntegerField()
-                )
-            ).filter(rank__gt=0).only('name', 'price', 'old_price', 'image', 'shop_id', 'shop__last_update', 'sale', 'url').order_by('-shop__last_update', '-starts_with', '-rank')[offset:offset + limit]
-            # for word in search_query.split(' '):
-            #     # search_pattern = f'%{word}%'
-            #     products += f".filter(name__icontains='{word}')"
-            # products += f".only('name', 'price', 'old_price', 'image', 'shop_id', 'shop__last_update', 'sale', 'url').order_by('-shop__last_update')[offset:offset+limit]"
-            # products = eval(products)
-        elif sort_order in ['price', '-price']:
-            products = Product.objects.filter(search=query).annotate(
-                starts_with=Case(
-                    When(name__istartswith=search_query, then=Value(1)),
-                    default=Value(0),
-                    output_field=IntegerField()
-                )
-            ).only(
-                'name', 'price', 'old_price', 'image', 'sale', 'url'
-            ).order_by('-starts_with', sort_order)[offset:offset + limit]
+            ).exclude(shop_id=exclude_shop_id).order_by(sort_order)[offset:offset + limit]
         else:
-            products = Product.objects.filter(search=query).annotate(
-                starts_with=Case(
-                    When(name__istartswith=search_query, then=Value(1)),
-                    default=Value(0),
-                    output_field=IntegerField()
-                )
-            ).only(
+            products = Product.objects.filter(query_conditions).only(
                 'name', 'price', 'old_price', 'image', 'sale', 'url'
-            ).order_by('-starts_with')[offset:offset + limit]
+            ).exclude(shop_id=exclude_shop_id).order_by()[offset:offset + limit]
+    
     else:
         if sort_order == '-sale':
-            products = Product.objects.filter(price__isnull=False).only('name', 'price','old_price', 'image', 'sale', 'url').order_by(sort_order)[offset:offset + limit]
-        elif sort_order == 'last_update':
-            with connection.cursor() as cursor:
-                # SET для настройки сессии
-                cursor.execute("SET enable_material TO off;")
-                # ORM-запрос
-                products = Product.objects.select_related('shop').only(
-                    'name', 'price', 'old_price', 'image', 'shop_id',
-                    'shop__last_update', 'sale', 'url'
-                ).order_by('-shop__last_update')[offset:offset + limit]
+            products = Product.objects.filter(price__isnull=False).only('name', 'price','old_price', 'image', 'sale', 'url', 'shop_id').exclude(shop_id=exclude_shop_id).order_by(sort_order)[offset:offset + limit]
         elif sort_order in ['price', '-price']:
-            products = Product.objects.only('name', 'price', 'old_price', 'image', 'sale', 'url').order_by(sort_order)[offset:offset + limit]
+            products = Product.objects.only('name', 'price', 'old_price', 'image', 'sale', 'url', 'shop_id').exclude(shop_id=exclude_shop_id).order_by(sort_order)[offset:offset + limit]
         else:
-            products = Product.objects.only('name', 'price', 'old_price', 'image', 'sale', 'url').order_by()[offset:offset + limit]
-
+            products = Product.objects.only('name', 'price', 'old_price', 'image', 'sale', 'url', 'shop_id').exclude(shop_id=exclude_shop_id).order_by()[offset:offset + limit]
+            
     count = len(products)
-    page_obj = products
+    if search_query and not sort_order:
+        page_obj = sorted(products, key=lambda obj: (not obj.name.upper().startswith(search_query.upper()), obj.name))
+    else:
+        page_obj = products
     if count >= limit:
         has_next = page_number + 1
     else:
@@ -117,10 +117,12 @@ def all(request):
 def show_shops(request):
     query = request.GET.get('search')
 
+    # Optimize the query using select_related for ForeignKey or OneToOne relationships
     if query:
-        shops = Shop.objects.filter(name__icontains=query).only('shop_id', 'category', 'name', 'image').order_by("name").prefetch_related('category')
+        words = query.split()  # Разбиваем запрос на отдельные слова
+        shops = Shop.objects.annotate(coupon_count=Count('promocodes')).filter(coupon_count__gt=0).filter(*[Q(name__icontains=word) for word in words]).only('shop_id', 'category', 'name', 'image').order_by("name").prefetch_related('category')
     else:
-        shops = Shop.objects.all().only('shop_id', 'category', 'name', 'image').order_by("name").prefetch_related('category')
+        shops = Shop.objects.annotate(coupon_count=Count('promocodes')).filter(coupon_count__gt=0).all().only('shop_id', 'category', 'name', 'image').order_by("name").prefetch_related('category')
 
     return render(
         request,
@@ -134,8 +136,8 @@ def show_shop_item(request, shop_id):
     coupons = Coupon.objects.filter(shop=shop)
     for coupon in coupons:
         if coupon.discount is not None:
-            if coupon.discount[-1] == '%':
-                if int(coupon.discount[:-1]) >= 30:
+            if coupon.currency == '%':
+                if int(coupon.discount) >= 30:
                     coupon.name = f"1{coupon.name}"
                 elif coupon.code in ['NOT REQUIRED', 'NOT REQUIRE', 'НЕ НУЖЕН', None]:
                     coupon.name = f"2{coupon.name}"
@@ -145,6 +147,9 @@ def show_shop_item(request, shop_id):
                 coupon.name = f"2{coupon.name}"
             else:
                 coupon.name = f"3{coupon.name}"
+                
+            if (str(coupon.currency) not in coupon.name) and (str(coupon.discount) != '1'):
+                coupon.name = f"{coupon.name} - Скидка {coupon.discount}{coupon.currency}"
         elif coupon.code in ['NOT REQUIRED', 'NOT REQUIRE', 'НЕ НУЖЕН', None]:
             coupon.name = f"2{coupon.name}"
         else:
@@ -156,9 +161,8 @@ def show_shop_item(request, shop_id):
         {'shop': shop, 'coupons': coupons},
     )
 
-
 def show_categories(request):
-    shops = Shop.objects.all().order_by("name")
+    shops = Shop.objects.annotate(coupon_count=Count('promocodes')).filter(coupon_count__gt=0).order_by("name")
     categories = CategoryShop.objects.all().annotate(store_count=Count('shops')).order_by("name")
     return render(
         request,
@@ -168,23 +172,25 @@ def show_categories(request):
 
 
 def category_shops(request, category_id):
-    # Получаем значение из поля поиска
     search_query = request.GET.get('search')
     category = CategoryShop.objects.get(pk=category_id)
     if search_query:
-        shops = Shop.objects.filter(category=category_id).filter(name__icontains=search_query)
+        words = search_query.split()
+        shops = Shop.objects.annotate(coupon_count=Count('promocodes')).filter(coupon_count__gt=0).filter(category=category_id).filter(*[Q(name__icontains=word) for word in words])
     else:
-        shops = Shop.objects.filter(category=category_id)
+        shops = Shop.objects.annotate(coupon_count=Count('promocodes')).filter(coupon_count__gt=0).filter(category=category_id)
 
     return render(request, 'sales_app/category_shops.html', {'shops': shops, 'search_query': search_query, 'category': category})
 
 
 def shops_products(request):
     query = request.GET.get('search')
+    excluded_shop_names = ['lamoda ru', 'xcom-shop.ru', 'Glasseslit WW', 'Мегамаркет', 'ChicMe WW', 'Boutiquefeel WW', 'Яндекс.Маркет', 'ЭПЛ Даймонд', 'Онлайн-кинотеатр START', 'Lichi', 'ПУЛЬТ.РУ', 'premier.one', 'AliExpress WW', 'AliExpress RU&CIS NEW']
     if query:
-        shops = Shop.objects.filter(name__icontains=query).only('shop_id', 'category', 'name', 'image').order_by("name").prefetch_related('category')
+        words = query.split()  # Разбиваем запрос на отдельные слова
+        shops = Shop.objects.filter(*[Q(name__icontains=word) for word in words]).only('shop_id', 'category', 'name', 'image').exclude(name__in=excluded_shop_names).order_by("name").prefetch_related('category')
     else:
-        shops = Shop.objects.all().only('shop_id', 'category', 'name', 'image').order_by("name").prefetch_related('category')
+        shops = Shop.objects.all().only('shop_id', 'category', 'name', 'image').exclude(name__in=excluded_shop_names).order_by("name").prefetch_related('category')
 
     return render(
         request,
@@ -194,73 +200,6 @@ def shops_products(request):
 
 
 
-def get_filtered_products(shop, search_query, sort_order, page_number, category1=None, category2=None, category3=None, category4=None):
-    filters = {
-        'shop': shop,
-    }
-    if category1:
-        filters['category1'] = category1
-    if category2:
-        filters['category2'] = category2
-    if category3:
-        filters['category3'] = category3
-    if category4:
-        filters['category4'] = category4
-
-
-    limit = 50  # Ограничение на 50 записей
-
-    if page_number > 1:
-        offset = limit * (page_number - 1)
-    else:
-        offset = 0
-
-    if search_query:
-        if sort_order == '-sale':
-            products = "Product.objects.annotate(has_sale=Case(When(sale__isnull=False, then=True), default=False, output_field=BooleanField())).filter(price__isnull=False)"
-            for word in search_query.split(' '):
-                # search_pattern = f'%{word}%'
-                products += f".filter(**filters)"
-                products += f".filter(name__icontains='{word}')"
-            products += f".only('name', 'price', 'old_price', 'image', 'sale', 'url').order_by('-has_sale', '{sort_order}')[offset:offset+limit]"
-            products = eval(products)
-        elif sort_order == 'last_update':
-            products = "Product.objects.select_related('shop')"
-            for word in search_query.split(' '):
-                # search_pattern = f'%{word}%'
-                products += f".filter(**filters)"
-                products += f".filter(name__icontains='{word}')"
-            products += f".only('name', 'price', 'old_price', 'image', 'shop__last_update', 'sale', 'url').order_by('-shop__last_update')[offset:offset+limit]"
-            products = eval(products)
-        else:
-            products = "Product.objects"
-            for word in search_query.split(' '):
-                # search_pattern = f'%{word}%'
-                products += f".filter(**filters)"
-                products += f".filter(name__icontains='{word}')"
-            products += f".only('name', 'price', 'old_price', 'image', 'sale', 'url').order_by('{sort_order}')[offset:offset+limit]"
-            products = eval(products)
-    else:
-        if sort_order == '-sale':
-            products = Product.objects.annotate(has_sale=Case(When(sale__isnull=False, then=True), default=False, output_field=BooleanField())).filter(**filters, price__isnull=False).only('name', 'price','old_price', 'image', 'sale', 'url').order_by('-has_sale', sort_order)[offset:offset + limit]
-        elif sort_order == 'last_update':
-            products = Product.objects.select_related('shop').filter(**filters).only('name', 'price', 'old_price', 'image', 'shop__last_update', 'sale', 'url').order_by('-shop__last_update')[offset:offset + limit]
-        else:
-            products = Product.objects.filter(**filters).only('name', 'price', 'old_price', 'image', 'sale', 'url').order_by(sort_order)[offset:offset + limit]
-
-    count = len(products)
-    page_obj = products
-    if count >= limit:
-        has_next = page_number + 1
-    else:
-        has_next = None
-
-    if page_number > 1:
-        has_previous = page_number - 1
-    else:
-        has_previous = None
-
-    return page_obj, has_next, has_previous, sort_order
 
 
 def category_view(request, shop_id):
@@ -277,53 +216,50 @@ def category_view(request, shop_id):
         offset = 0
 
     if search_query:
-        query = SearchQuery(search_query, config='russian')
+        search_variants = generate_translit_variants(search_query)
+        split_variants = [variant.split() for variant in search_variants]
+        num_words = len(search_query.split())
+        all_words = list(set(chain.from_iterable(split_variants)))
+        unique_combinations = set(
+            tuple(sorted(combo)) for combo in permutations(all_words, num_words)
+        )
+        combinations = [' '.join(combo) for combo in unique_combinations]
+
+        # Формируем условие для фильтрации (по всем вариантам)
+        query_conditions = Q()
+        for variant in combinations:
+            query = SearchQuery(variant, config='russian')
+            query_conditions |= Q(search=query)
+        # vector = SearchVector('name', config='russian')
 
         if sort_order == '-sale':
-            vector = SearchVector('name', config='russian')
-            products = Product.objects.filter(shop_id=shop_id).filter(search=query).annotate(
-                rank=SearchRank(vector, query),  # Ранг релевантности
-                starts_with=Case(
-                    When(name__istartswith=search_query, then=Value(1)),
-                    default=Value(0),
-                    output_field=IntegerField()
-                )
-            ).filter(rank__gt=0).only(
-                'name', 'price', 'old_price', 'image', 'sale', 'url'
-            ).order_by('-sale', '-starts_with', '-rank')[offset:offset + limit]
-        elif sort_order == 'last_update':
-            vector = SearchVector('name', config='russian')
-            # products = Product.objects.select_related('shop').filter(search=query).only('name', 'price', 'old_price', 'image', 'shop_id', 'shop__last_update', 'sale', 'url').order_by('-shop__last_update')[offset:offset+limit]
-            products = Product.objects.filter(shop_id=shop_id).select_related('shop').filter(search=query).annotate(
-                rank=SearchRank(vector, query),  # Ранг релевантности
-                starts_with=Case(
-                    When(name__istartswith=search_query, then=Value(1)),
-                    default=Value(0),
-                    output_field=IntegerField()
-                )
-            ).filter(rank__gt=0).only('name', 'price', 'old_price', 'image', 'shop_id', 'shop__last_update', 'sale',
-                                      'url').order_by('-shop__last_update', '-starts_with', '-rank')[
-                       offset:offset + limit]
-        elif sort_order in ['price', '-price']:
-            vector = SearchVector('name', config='russian')
-            products = Product.objects.filter(shop_id=shop_id).filter(search=query).annotate(
-                rank=SearchRank(vector, query),  # Ранг релевантности
-                starts_with=Case(
-                    When(name__istartswith=search_query, then=Value(1)),
-                    default=Value(0),
-                    output_field=IntegerField()
-                )
-            ).filter(rank__gt=0).only(
-                'name', 'price', 'old_price', 'image', 'sale', 'url'
-            ).order_by(sort_order, '-starts_with', '-rank')[offset:offset + limit]
-        else:
-            products = Product.objects.filter(shop_id=shop_id).filter(search=query).annotate(
+            products = Product.objects.filter(shop_id=shop_id).filter(query_conditions).annotate(
                 starts_with=Case(
                     When(name__istartswith=search_query, then=Value(1)),
                     default=Value(0),
                     output_field=IntegerField()
                 )
             ).only(
+                'name', 'price', 'old_price', 'image', 'sale', 'url'
+            ).order_by('-starts_with', '-sale')[offset:offset + limit]
+        elif sort_order in ['price', '-price']:
+            products = Product.objects.filter(shop_id=shop_id).filter(query_conditions).annotate(
+                starts_with=Case(
+                    When(name__istartswith=search_query, then=Value(1)),
+                    default=Value(0),
+                    output_field=IntegerField()
+                )
+            ).only(
+                'name', 'price', 'old_price', 'image', 'sale', 'url'
+            ).order_by('-starts_with', sort_order)[offset:offset + limit]
+        else:
+            products = Product.objects.filter(shop_id=shop_id).filter(query_conditions).annotate(
+                    starts_with=Case(
+                        When(name__istartswith=search_query, then=Value(1)),
+                        default=Value(0),
+                        output_field=IntegerField()
+                    )
+                ).only(
                 'name', 'price', 'old_price', 'image', 'sale', 'url'
             ).order_by('-starts_with')[offset:offset + limit]
     else:
@@ -354,20 +290,75 @@ def category_view(request, shop_id):
                                                   'has_next': has_next, 'number': page_number, 'order': sort_order, 'shop': shop})
 
 
-# def product_item(request, shop_id, product_id):
-#     shop = Shop.objects.get(pk=shop_id)
-#     product = Product.objects.get(pk=product_id)
-#     return render(request, 'sales_app/product_item.html', {'product': product, 'shop': shop})
-
-
 def redirect_to(request):
     yclid = request.GET.get('yclid')
     # if yclid:
     #     LinkClick.objects.create(yclid=yclid, clicked_at=timezone.now())
 
-    return redirect(f'https://t.me/bot/?start={yclid}')
+    return redirect(f'https://t.me/coupons186_bot/?start={yclid}')
+
+
+def redirect_to2(request):
+    yclid = request.GET.get('yclid')
+    # if yclid:
+    #     LinkClick.objects.create(yclid=yclid, clicked_at=timezone.now())
+
+    return redirect(f'https://t.me/products186_bot/?start={yclid}')
 
 
 def main(request):
     shops = Shop.objects.all().only('image')
     return render(request, 'sales_app/main.html', {'shops': shops})
+
+
+def redirect_main(request):
+    return redirect('sales_app:redirect_to')
+
+
+
+
+@api_view(['POST'])
+def add_user(request):
+    ALLOWED_REFERER = 'https://www.skidki186.ru'
+    referer = request.META.get('HTTP_REFERER')
+    logger.info(referer)
+    if not referer or not referer.startswith(ALLOWED_REFERER):
+        return JsonResponse({"success": False, "error": "Invalid request origin"}, status=403)
+
+    user_id = request.data.get('id')  # Telegram ID из запроса
+
+    if not user_id:
+        return Response({"success": False, "error": "ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Получаем текущие данные пользователя
+    user = UserTG.objects.filter(id=user_id).first()
+
+    # Собираем обновляемые поля, если они есть в запросе
+    update_fields = {}
+    if 'username' in request.data:
+        update_fields['username'] = request.data.get('username')
+    if 'last_date_prom' in request.data:
+        update_fields['last_date_prom'] = request.data.get('last_date_prom')
+    if 'last_date_prod' in request.data:
+        update_fields['last_date_prod'] = request.data.get('last_date_prod')
+
+    if user:
+        # Обновляем только те поля, которые были переданы
+        for field, value in update_fields.items():
+            setattr(user, field, value)
+        user.save()
+        created = False
+    else:
+        # Если пользователя нет, то создаем нового
+        user = UserTG.objects.create(id=user_id, **update_fields)
+        created = True
+
+    return Response(
+        {"success": True, "user": UserTGSerializer(user).data, "created": created},
+        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    )
+
+
+
+def offline_view(request):
+    return render(request, 'sales_app/offline.html')
