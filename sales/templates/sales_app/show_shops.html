@@ -66,7 +66,7 @@
     </style>
 </head>
 <div class="tab-container">
-        <a href="{% url 'sales_app:shops' %}" class="tab-button {% if request.path == '/shops' %}active{% endif %}"><b>Магазины</b></a>
+        <a href="{% url 'sales_app:shops' %}" class="tab-button {% if request.path == '/promokodi' %}active{% endif %}"><b>Магазины</b></a>
         <a href="{% url 'sales_app:categories' %}" class="tab-button {% if request.path == '/categories' %}active{% endif %}"><b>Категории</b></a>
 </div>
 <form method="GET" action="">
