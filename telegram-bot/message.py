@@ -15,34 +15,6 @@ from db_con import select_from_db, get_image_xlsx, select_products, update_datab
 MAX_CAPTION_LENGTH = 1024
 
 
-access_token = ''
-
-# Параметры запроса
-params = {
-    # 'region': 'RU',  # Попробуйте изменить на другой регион, например, 'RU'
-    'limit': 500,
-    # 'currancy': 'RUB'# Увеличьте лимит для получения большего количества купонов
-    # 'language': 'ru',
-}
-
-# Заголовки запроса
-headers = {
-    'Authorization': f'Bearer {access_token}'
-}
-
-
-
-
-# def get_promocode_by_id(id):
-#     # URL для запроса
-#     url = f'https://api.admitad.com/coupons/{id}/'
-#     # Выполнение GET-запроса
-#     response = requests.get(url, headers=headers, params=params)
-#     if response.status_code == 200:
-#         data = response.json()
-#         print(data)
-#     else:
-#         print('Ошибка при выполнении запроса:', response.status_code, response.text)
 
 
 
@@ -99,19 +71,19 @@ def load_template_products():
     return column1, column2, column3, column4, column5, column6
 
 
-def get_advcampaigns_for_website2():
-    url = f''
-    url2 = f''
-    response = requests.get(url, headers=headers, params=params)
-    response2 = requests.get(url2, headers=headers, params=params)
-    if response.status_code == 200 and response2.status_code == 200:
-        data = response.json()
-        for_delete, not_rub = save_products_to_db(data)
-        data2 = response2.json()
-        for_delete2, not_rub2 = save_products_to_db(data2)
-        return for_delete+for_delete2, not_rub+not_rub2
-    else:
-        print('Ошибка при выполнении запроса:', response.status_code, response.text)
+# def get_advcampaigns_for_website2():
+#     url = f''
+#     url2 = f''
+#     response = requests.get(url, headers=headers, params=params)
+#     response2 = requests.get(url2, headers=headers, params=params)
+#     if response.status_code == 200 and response2.status_code == 200:
+#         data = response.json()
+#         for_delete, not_rub = save_products_to_db(data)
+#         data2 = response2.json()
+#         for_delete2, not_rub2 = save_products_to_db(data2)
+#         return for_delete+for_delete2, not_rub+not_rub2
+#     else:
+#         print('Ошибка при выполнении запроса:', response.status_code, response.text)
 
     
 
@@ -146,9 +118,9 @@ def get_categories_coupons():
         return data
 
 def get_coupons():
-    go_out_shops = get_advcampaigns_for_website()
-    if go_out_shops is None:
-        go_out_shops = get_advcampaigns_for_website()
+    # go_out_shops = get_advcampaigns_for_website()
+    # if go_out_shops is None:
+    #     go_out_shops = get_advcampaigns_for_website()
     # URL для запроса
     ids_categories = get_categories_coupons()
     urls = ['https://api.admitad.com/coupons/website/00000/', 'https://api.admitad.com/coupons/website/00000/']
@@ -218,11 +190,6 @@ def create_product(post_link=False):
             message += f'<blockquote><i>{call}</i></blockquote>\n\n'
         end = end.replace('{реквизиты оффера}', legal_info)
         end = end.replace('{название магазина}', name_shop)
-        # parsed_url = urlparse(url)
-        # params = parse_qs(parsed_url.query)
-        # # Получение значения 'erid'
-        # erid_value = params.get('erid', [None])[0]
-        # end = end.replace('{N erid}', erid_value)
         message += end
         type = 'product'
         image = add_text(image, end, type)
